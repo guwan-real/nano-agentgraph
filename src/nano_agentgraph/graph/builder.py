@@ -1,4 +1,4 @@
-"""Graph builder for the minimal sequential nano-agentgraph runtime."""
+"""Graph builder for the sequential nano-agentgraph runtime."""
 
 from __future__ import annotations
 
@@ -8,20 +8,25 @@ from typing import Any
 from nano_agentgraph.errors import GraphValidationError
 from nano_agentgraph.graph.compiled import CompiledStateGraph
 from nano_agentgraph.graph.constants import END, START
+from nano_agentgraph.graph.state import parse_reducers
 
 
 class StateGraph:
     """Build a small LangGraph-style state graph.
 
-    M1 supports a sequential chain of nodes connected by static edges. Advanced
-    features such as checkpointing, interrupts, conditional routing, and Command
-    routing deliberately raise clear errors until their milestones are added.
+    The runtime intentionally stays sequential for now, while supporting the
+    core LangGraph-style building blocks for reducers, conditional routing,
+    Command routing, checkpointing, interrupts, and streaming.
     """
 
     def __init__(self, state_schema: type[Any] | None = None) -> None:
         self.state_schema = state_schema
         self._nodes: dict[str, Callable[[dict[str, Any]], Any]] = {}
         self._edges: dict[str, list[str]] = {}
+        self._conditional_edges: dict[
+            str,
+            tuple[Callable[[dict[str, Any]], Any], dict[Any, str] | None],
+        ] = {}
 
     def add_node(
         self,
@@ -85,17 +90,32 @@ class StateGraph:
     def add_conditional_edges(
         self,
         source: str,
-        path: Callable[[dict[str, Any]], str],
-        path_map: dict[str, str] | None = None,
+        path: Callable[[dict[str, Any]], Any],
+        path_map: dict[Any, str] | None = None,
     ) -> StateGraph:
-        """Register conditional routing.
+        """Register conditional routing from a node."""
 
-        Conditional edges are part of a later milestone.
-        """
+        if not isinstance(source, str):
+            msg = "add_conditional_edges(source, path) expects a string source."
+            raise TypeError(msg)
+        if source in {START, END}:
+            msg = "Conditional edges must start from a real node."
+            raise GraphValidationError(msg)
+        if not callable(path):
+            msg = "Conditional edge path must be callable."
+            raise TypeError(msg)
+        if path_map is not None and not isinstance(path_map, dict):
+            msg = "path_map must be a dictionary when provided."
+            raise TypeError(msg)
+        if source in self._conditional_edges:
+            msg = f"Conditional edges for {source!r} already exist."
+            raise GraphValidationError(msg)
 
-        del source, path, path_map
-        msg = "add_conditional_edges() is not implemented yet; it is planned for M3."
-        raise NotImplementedError(msg)
+        self._conditional_edges[source] = (
+            path,
+            dict(path_map) if path_map is not None else None,
+        )
+        return self
 
     def compile(
         self,
@@ -106,9 +126,6 @@ class StateGraph:
     ) -> CompiledStateGraph:
         """Validate and compile the graph into an invokable runtime."""
 
-        if checkpointer is not None:
-            msg = "Checkpointing is not implemented yet; it is planned for M4."
-            raise NotImplementedError(msg)
         if interrupt_before is not None or interrupt_after is not None:
             msg = "Interrupt controls are not implemented yet; they are planned for M5."
             raise NotImplementedError(msg)
@@ -120,6 +137,9 @@ class StateGraph:
         return CompiledStateGraph(
             nodes=dict(self._nodes),
             edges={source: list(targets) for source, targets in self._edges.items()},
+            conditional_edges=dict(self._conditional_edges),
+            reducers=parse_reducers(self.state_schema),
+            checkpointer=checkpointer,
         )
 
     @staticmethod
@@ -142,7 +162,7 @@ class StateGraph:
             if len(targets) > 1:
                 msg = (
                     f"Node {source!r} has multiple outgoing edges. "
-                    "Parallel routing is not implemented yet."
+                    "parallel routing is not implemented yet."
                 )
                 raise GraphValidationError(msg)
             for target in targets:
@@ -150,23 +170,16 @@ class StateGraph:
                     msg = f"Edge target {target!r} is not a known node."
                     raise GraphValidationError(msg)
 
-        visited: set[str] = set()
-        current = START
-
-        while current != END:
-            if current in visited:
-                msg = f"Cycle detected at {current!r}; cycles are not supported in M1."
+        for source, (_, path_map) in self._conditional_edges.items():
+            if source not in self._nodes:
+                msg = f"Conditional edge source {source!r} is not a known node."
                 raise GraphValidationError(msg)
-            visited.add(current)
-
-            targets = self._edges.get(current)
-            if not targets:
-                msg = f"Node {current!r} has no outgoing edge to continue or END."
-                raise GraphValidationError(msg)
-            current = targets[0]
-
-        unreachable = set(self._nodes) - visited
-        if unreachable:
-            names = ", ".join(sorted(unreachable))
-            msg = f"Unreachable node(s): {names}."
-            raise GraphValidationError(msg)
+            if path_map is None:
+                continue
+            for target in path_map.values():
+                if target == START:
+                    msg = "START cannot be used as a conditional edge target."
+                    raise GraphValidationError(msg)
+                if target != END and target not in self._nodes:
+                    msg = f"Conditional edge target {target!r} is not a known node."
+                    raise GraphValidationError(msg)

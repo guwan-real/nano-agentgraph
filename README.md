@@ -93,15 +93,19 @@ from nano_agentgraph import StateGraph, START, END, Command, interrupt, InMemory
 | `CompiledStateGraph.invoke(input)` | Supported |
 | Partial dict updates | Supported with overwrite semantics |
 | Input state mutation protection | Supported |
-| Reducers from `typing.Annotated` | Planned |
-| Conditional edges | Planned |
-| `Command(update=..., goto=...)` routing | Planned |
-| In-memory checkpointing | Planned |
-| Interrupt and resume | Planned |
-| Streaming | Planned |
+| Reducers from `typing.Annotated` | Supported |
+| Conditional edges | Supported for one destination |
+| `Command(update=..., goto=...)` routing | Supported for one destination |
+| In-memory checkpointing | Supported |
+| `get_state(config)` / `update_state(config, values)` | Supported |
+| Interrupt and resume | Supported with checkpointing |
+| `stream_mode="values"` / `stream_mode="updates"` | Supported |
 
-Unsupported advanced features raise clear `NotImplementedError` or
-project-specific validation errors.
+Unsupported advanced features, such as parallel routing and message streaming,
+raise clear `NotImplementedError` or project-specific validation errors.
+
+When resuming from `interrupt(...)`, the interrupted node restarts from the
+beginning and receives the resume value from the next `interrupt(...)` call.
 
 ### Non-goals for the first release
 
@@ -119,12 +123,26 @@ project-specific validation errors.
 
 ### Examples and tests
 
-The current milestone keeps examples in the test suite:
+Runnable examples live in `examples/`:
+
+- `examples/01_sequence.py`
+- `examples/02_conditional.py`
+- `examples/03_reducers.py`
+- `examples/04_command.py`
+- `examples/05_checkpoint.py`
+- `examples/06_interrupt_resume.py`
+- `examples/07_streaming.py`
+
+The test suite covers the same public behavior:
 
 - `tests/test_imports.py` protects import compatibility.
 - `tests/test_sequence.py` protects the docs-style sequential graph behavior.
-
-Standalone files under `examples/` are planned for a later milestone.
+- `tests/test_reducers.py` covers `typing.Annotated` reducers.
+- `tests/test_conditional_edges.py` covers conditional routing.
+- `tests/test_command.py` covers `Command(update=..., goto=...)`.
+- `tests/test_checkpoint_memory.py` covers `InMemorySaver` and state snapshots.
+- `tests/test_interrupt_resume.py` covers interrupt/resume.
+- `tests/test_streaming.py` covers `values` and `updates` streaming.
 
 ### Development
 
@@ -222,14 +240,19 @@ from nano_agentgraph import StateGraph, START, END, Command, interrupt, InMemory
 | `CompiledStateGraph.invoke(input)` | 已支持 |
 | 局部 dict 更新 | 已支持，默认覆盖 |
 | 保护调用方输入状态不被原地修改 | 已支持 |
-| 从 `typing.Annotated` 解析 reducer | 计划中 |
-| 条件边 | 计划中 |
-| `Command(update=..., goto=...)` 路由 | 计划中 |
-| 内存 checkpoint | 计划中 |
-| interrupt 和 resume | 计划中 |
-| streaming | 计划中 |
+| 从 `typing.Annotated` 解析 reducer | 已支持 |
+| 条件边 | 已支持单目标 |
+| `Command(update=..., goto=...)` 路由 | 已支持单目标 |
+| 内存 checkpoint | 已支持 |
+| `get_state(config)` / `update_state(config, values)` | 已支持 |
+| interrupt 和 resume | 已支持，需 checkpoint |
+| `stream_mode="values"` / `stream_mode="updates"` | 已支持 |
 
-尚未支持的高级功能会抛出清晰的 `NotImplementedError` 或项目专用校验错误。
+尚未支持的高级功能，例如并行路由和 message streaming，会抛出清晰的
+`NotImplementedError` 或项目专用校验错误。
+
+从 `interrupt(...)` 恢复时，被中断的节点会从头重新执行，并在下一次
+`interrupt(...)` 调用处收到 resume 值。
 
 ### 首个版本的非目标
 
@@ -247,12 +270,26 @@ from nano_agentgraph import StateGraph, START, END, Command, interrupt, InMemory
 
 ### 示例和测试
 
-当前里程碑先把示例行为放在测试中：
+可运行示例位于 `examples/`：
+
+- `examples/01_sequence.py`
+- `examples/02_conditional.py`
+- `examples/03_reducers.py`
+- `examples/04_command.py`
+- `examples/05_checkpoint.py`
+- `examples/06_interrupt_resume.py`
+- `examples/07_streaming.py`
+
+测试套件覆盖同一组公开行为：
 
 - `tests/test_imports.py` 保护导入兼容。
 - `tests/test_sequence.py` 保护文档风格的顺序图行为。
-
-独立的 `examples/` 文件夹会在后续里程碑补上。
+- `tests/test_reducers.py` 覆盖 `typing.Annotated` reducer。
+- `tests/test_conditional_edges.py` 覆盖条件路由。
+- `tests/test_command.py` 覆盖 `Command(update=..., goto=...)`。
+- `tests/test_checkpoint_memory.py` 覆盖 `InMemorySaver` 和状态快照。
+- `tests/test_interrupt_resume.py` 覆盖 interrupt/resume。
+- `tests/test_streaming.py` 覆盖 `values` 和 `updates` streaming。
 
 ### 开发
 

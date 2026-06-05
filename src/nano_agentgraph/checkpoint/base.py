@@ -1,4 +1,4 @@
-"""Checkpoint interfaces reserved for later milestones."""
+"""Checkpoint interfaces."""
 
 from __future__ import annotations
 
@@ -19,25 +19,16 @@ class Checkpoint:
 
 
 class BaseCheckpointSaver:
-    """Base checkpoint saver placeholder for the M4 implementation."""
+    """Base checkpoint saver interface."""
 
     def get_latest(self, thread_id: str) -> Checkpoint | None:
         """Return the latest checkpoint for a thread."""
-
-        del thread_id
-        msg = "Checkpoint saving is not implemented yet; it is planned for M4."
-        raise NotImplementedError(msg)
+        raise NotImplementedError
 
     def put(self, thread_id: str, checkpoint: Checkpoint) -> None:
         """Store a checkpoint for a thread."""
-
-        del thread_id, checkpoint
-        msg = "Checkpoint saving is not implemented yet; it is planned for M4."
-        raise NotImplementedError(msg)
+        raise NotImplementedError
 
     def list(self, thread_id: str) -> list[Checkpoint]:
         """List checkpoints for a thread."""
-
-        del thread_id
-        msg = "Checkpoint saving is not implemented yet; it is planned for M4."
-        raise NotImplementedError(msg)
+        raise NotImplementedError
