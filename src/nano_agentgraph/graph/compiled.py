@@ -8,7 +8,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from nano_agentgraph.checkpoint.base import BaseCheckpointSaver, Checkpoint
-from nano_agentgraph.errors import GraphValidationError, InvalidUpdateError
+from nano_agentgraph.errors import (
+    CheckpointError,
+    GraphRecursionError,
+    GraphValidationError,
+    InterruptError,
+    InvalidUpdateError,
+)
 from nano_agentgraph.graph.constants import END, START
 from nano_agentgraph.graph.state import StateSnapshot
 from nano_agentgraph.types import (
@@ -19,6 +25,8 @@ from nano_agentgraph.types import (
     _InterruptContext,
 )
 
+DEFAULT_RECURSION_LIMIT = 25
+
 
 @dataclass(slots=True)
 class _RunPosition:
@@ -27,6 +35,13 @@ class _RunPosition:
     thread_id: str | None
     step: int
     resume: Any = _NO_RESUME
+
+
+@dataclass(slots=True)
+class _StepResult:
+    node: str
+    update: dict[str, Any]
+    state: dict[str, Any]
 
 
 class CompiledStateGraph:
@@ -72,18 +87,25 @@ class CompiledStateGraph:
             msg = "Only stream version 'v2' is supported."
             raise NotImplementedError(msg)
         modes = self._normalize_stream_modes(stream_mode)
-        events: list[dict[str, Any]] = []
+        position = self._start_position(input, config)
+        limit = self._recursion_limit(config)
+        executed = 0
 
-        def collect(node: str, update: dict[str, Any], state: dict[str, Any]) -> None:
+        while position.current != END:
+            if limit is not None and executed >= limit:
+                self._raise_recursion_error(limit)
+            try:
+                step = self._run_one(position)
+            except _GraphInterrupt as interrupt:
+                self._handle_interrupt(interrupt, position)
+                return
+            executed += 1
             for mode in modes:
                 if mode == "updates":
-                    data = {node: deepcopy(update)}
+                    data = {step.node: deepcopy(step.update)}
                 else:
-                    data = deepcopy(state)
-                events.append({"type": mode, "ns": (), "data": data})
-
-        self._execute(input, config, on_step=collect)
-        yield from events
+                    data = deepcopy(step.state)
+                yield {"type": mode, "ns": (), "data": data}
 
     def get_state(self, config: dict[str, Any]) -> StateSnapshot:
         """Return the latest checkpointed state for a thread."""
@@ -128,37 +150,39 @@ class CompiledStateGraph:
         self,
         input: dict[str, Any] | Command,
         config: dict[str, Any] | None,
-        on_step: Callable[[str, dict[str, Any], dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         position = self._start_position(input, config)
+        limit = self._recursion_limit(config)
+        executed = 0
 
         while position.current != END:
+            if limit is not None and executed >= limit:
+                self._raise_recursion_error(limit)
             try:
-                raw_update = self._call_node(
-                    position.current,
-                    position.state,
-                    position.resume,
-                )
+                self._run_one(position)
             except _GraphInterrupt as interrupt:
-                return self._handle_interrupt(interrupt, position, config)
-
-            position.resume = _NO_RESUME
-            command = raw_update if isinstance(raw_update, Command) else None
-            update = self._coerce_update(position.current, raw_update)
-            applied_update = self._apply_update(position.state, update)
-            next_node = self._select_next(position.current, position.state, command)
-            position.step += 1
-            self._put_checkpoint(
-                position.thread_id,
-                position.step,
-                next_node,
-                position.state,
-            )
-            if on_step is not None:
-                on_step(position.current, applied_update, position.state)
-            position.current = next_node
+                return self._handle_interrupt(interrupt, position)
+            executed += 1
 
         return position.state
+
+    def _run_one(self, position: _RunPosition) -> _StepResult:
+        node = position.current
+        raw_update = self._call_node(node, position.state, position.resume)
+        position.resume = _NO_RESUME
+        command = raw_update if isinstance(raw_update, Command) else None
+        update = self._coerce_update(node, raw_update)
+        applied_update = self._apply_update(position.state, update)
+        next_node = self._select_next(node, position.state, command)
+        position.step += 1
+        self._put_checkpoint(
+            position.thread_id,
+            position.step,
+            next_node,
+            position.state,
+        )
+        position.current = next_node
+        return _StepResult(node=node, update=applied_update, state=position.state)
 
     def _start_position(
         self,
@@ -168,12 +192,12 @@ class CompiledStateGraph:
         if isinstance(input, Command):
             if input.resume is None:
                 msg = "Only Command(resume=...) is supported as graph input."
-                raise GraphValidationError(msg)
+                raise InterruptError(msg)
             thread_id = self._require_thread_id(config)
             latest = self._require_checkpointer().get_latest(thread_id)
             if latest is None or not latest.interrupted or latest.next_node is None:
                 msg = "Cannot resume because no interrupted checkpoint exists."
-                raise GraphValidationError(msg)
+                raise InterruptError(msg)
             return _RunPosition(
                 state=latest.state,
                 current=latest.next_node,
@@ -189,7 +213,7 @@ class CompiledStateGraph:
         thread_id = self._thread_id(config)
         if self._checkpointer is not None and thread_id is None:
             msg = "A checkpointer requires config['configurable']['thread_id']."
-            raise GraphValidationError(msg)
+            raise CheckpointError(msg)
         latest = (
             self._checkpointer.get_latest(thread_id)
             if self._checkpointer is not None and thread_id is not None
@@ -292,15 +316,13 @@ class CompiledStateGraph:
         self,
         interrupt: _GraphInterrupt,
         position: _RunPosition,
-        config: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        del config
         if self._checkpointer is None:
             msg = "interrupt() requires a graph compiled with a checkpointer."
-            raise GraphValidationError(msg)
+            raise InterruptError(msg)
         if position.thread_id is None:
             msg = "interrupt() requires config['configurable']['thread_id']."
-            raise GraphValidationError(msg)
+            raise InterruptError(msg)
         self._checkpointer.put(
             position.thread_id,
             Checkpoint(
@@ -339,26 +361,26 @@ class CompiledStateGraph:
         configurable = config.get("configurable", {})
         if not isinstance(configurable, dict):
             msg = "config['configurable'] must be a dictionary."
-            raise GraphValidationError(msg)
+            raise CheckpointError(msg)
         thread_id = configurable.get("thread_id")
         if thread_id is None:
             return None
         if not isinstance(thread_id, str):
             msg = "config['configurable']['thread_id'] must be a string."
-            raise GraphValidationError(msg)
+            raise CheckpointError(msg)
         return thread_id
 
     def _require_thread_id(self, config: dict[str, Any] | None) -> str:
         thread_id = self._thread_id(config)
         if thread_id is None:
             msg = "Expected config['configurable']['thread_id']."
-            raise GraphValidationError(msg)
+            raise CheckpointError(msg)
         return thread_id
 
     def _require_checkpointer(self) -> BaseCheckpointSaver:
         if self._checkpointer is None:
             msg = "This graph was compiled without a checkpointer."
-            raise GraphValidationError(msg)
+            raise CheckpointError(msg)
         return self._checkpointer
 
     def _snapshot_from_checkpoint(
@@ -394,3 +416,21 @@ class CompiledStateGraph:
             msg = f"Unsupported stream mode(s): {names}."
             raise NotImplementedError(msg)
         return modes
+
+    def _recursion_limit(self, config: dict[str, Any] | None) -> int | None:
+        if config is None:
+            return DEFAULT_RECURSION_LIMIT
+        raw_limit = config.get("recursion_limit", DEFAULT_RECURSION_LIMIT)
+        if raw_limit is None:
+            return None
+        if not isinstance(raw_limit, int) or raw_limit < 1:
+            msg = "config['recursion_limit'] must be a positive integer or None."
+            raise GraphValidationError(msg)
+        return raw_limit
+
+    def _raise_recursion_error(self, limit: int) -> None:
+        msg = (
+            f"Graph execution exceeded recursion_limit={limit}. "
+            "Pass a larger config['recursion_limit'] if this loop is intentional."
+        )
+        raise GraphRecursionError(msg)

@@ -7,7 +7,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
 
-from nano_agentgraph.errors import GraphValidationError
+from nano_agentgraph.errors import InterruptError
 
 _NO_RESUME = object()
 
@@ -45,7 +45,7 @@ def interrupt(value: Any) -> Any:
     context = _current_interrupt_context.get()
     if context is None:
         msg = "interrupt() can only be called while a graph node is executing."
-        raise GraphValidationError(msg)
+        raise InterruptError(msg)
 
     if context.resume is not _NO_RESUME and not context.used:
         context.used = True
@@ -55,6 +55,6 @@ def interrupt(value: Any) -> Any:
         json.dumps(value)
     except (TypeError, ValueError) as exc:
         msg = "interrupt() payload must be JSON-serializable."
-        raise GraphValidationError(msg) from exc
+        raise InterruptError(msg) from exc
 
     raise _GraphInterrupt(value)

@@ -52,6 +52,7 @@ def test_graph_writes_checkpoints_and_get_state_returns_latest_snapshot():
     assert snapshot.values == {"x": 1, "y": 2}
     assert snapshot.next == ()
     assert snapshot.metadata["step"] == 2
+    assert "StateSnapshot" in repr(snapshot)
 
 
 def test_update_state_applies_values_to_latest_checkpoint():

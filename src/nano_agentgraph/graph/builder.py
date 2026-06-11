@@ -170,6 +170,17 @@ class StateGraph:
                     msg = f"Edge target {target!r} is not a known node."
                     raise GraphValidationError(msg)
 
+        mixed_routes = sorted(
+            source for source in self._conditional_edges if source in self._edges
+        )
+        if mixed_routes:
+            names = ", ".join(repr(name) for name in mixed_routes)
+            msg = (
+                f"Node(s) {names} cannot have both static and conditional routing. "
+                "Use one routing style per node."
+            )
+            raise GraphValidationError(msg)
+
         for source, (_, path_map) in self._conditional_edges.items():
             if source not in self._nodes:
                 msg = f"Conditional edge source {source!r} is not a known node."

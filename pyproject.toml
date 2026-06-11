@@ -5,12 +5,33 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nano-agentgraph"
 version = "0.1.0"
-description = "A tiny, readable LangGraph-style graph runtime."
+description = "A tiny, readable LangGraph-style graph runtime for learning and hacking agent orchestration."
 readme = "README.md"
 requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+    { name = "guwan-real", email = "futao233@gmail.com" },
+]
+keywords = ["agent", "graph", "langgraph", "orchestration", "runtime"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
 dependencies = [
     "typing-extensions>=4.8",
 ]
+
+[project.urls]
+Homepage = "https://github.com/guwan-real/nano-agentgraph"
+Repository = "https://github.com/guwan-real/nano-agentgraph"
+Issues = "https://github.com/guwan-real/nano-agentgraph/issues"
 
 [project.optional-dependencies]
 dev = [
