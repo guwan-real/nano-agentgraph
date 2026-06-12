@@ -17,6 +17,12 @@ from nano_agentgraph.graph import StateGraph, START, END
 from nano_agentgraph.types import Command, interrupt
 ```
 
+Node ESM entry is also available:
+
+```js
+import { Annotation, START, END, StateGraph } from "nano-agentgraph";
+```
+
 nano-agentgraph is designed for API familiarity, not full LangGraph
 compatibility. A user who knows basic LangGraph examples should be able to keep
 the same code shape and change the import prefix to `nano_agentgraph` for the
@@ -77,6 +83,27 @@ assert result == {
 }
 ```
 
+### Node ESM example
+
+```js
+import { Annotation, START, END, StateGraph } from "nano-agentgraph";
+
+const State = Annotation.Root({
+  messages: Annotation({
+    reducer: (left, right) => left.concat(right),
+    default: () => [],
+  }),
+});
+
+const graph = new StateGraph(State)
+  .addNode("agent", async () => ({ messages: ["hello"] }))
+  .addConditionalEdges("agent", () => "stop", { stop: END })
+  .addEdge(START, "agent")
+  .compile();
+
+const result = await graph.invoke({});
+```
+
 ### Import mapping
 
 | LangGraph | nano-agentgraph |
@@ -116,6 +143,7 @@ from nano_agentgraph import StateGraph, START, END, Command, interrupt, InMemory
 | `stream_mode="values"` / `stream_mode="updates"` | Supported |
 | `config={"recursion_limit": 25}` | Supported |
 | `ToolNode` / `tools_condition` | Supported for plain dict messages |
+| Node ESM `Annotation` / `StateGraph` | Supported for the small JS/TS subset |
 
 Unsupported advanced features, such as parallel routing and message streaming,
 raise clear `NotImplementedError` or project-specific validation errors.
@@ -168,6 +196,8 @@ The test suite covers the same public behavior:
 ```bash
 pytest -q
 ruff check .
+npm test
+npm run test:types
 for file in examples/*.py; do python "$file"; done
 ```
 
@@ -180,6 +210,12 @@ for file in examples/*.py; do python "$file"; done
 ```python
 from nano_agentgraph.graph import StateGraph, START, END
 from nano_agentgraph.types import Command, interrupt
+```
+
+也提供 Node ESM 入口：
+
+```js
+import { Annotation, START, END, StateGraph } from "nano-agentgraph";
 ```
 
 nano-agentgraph 追求的是 API 熟悉感，而不是完整复制 LangGraph。熟悉基础
@@ -241,6 +277,27 @@ assert result == {
 }
 ```
 
+### Node ESM 示例
+
+```js
+import { Annotation, START, END, StateGraph } from "nano-agentgraph";
+
+const State = Annotation.Root({
+  messages: Annotation({
+    reducer: (left, right) => left.concat(right),
+    default: () => [],
+  }),
+});
+
+const graph = new StateGraph(State)
+  .addNode("agent", async () => ({ messages: ["hello"] }))
+  .addConditionalEdges("agent", () => "stop", { stop: END })
+  .addEdge(START, "agent")
+  .compile();
+
+const result = await graph.invoke({});
+```
+
 ### 导入映射
 
 | LangGraph | nano-agentgraph |
@@ -280,6 +337,7 @@ from nano_agentgraph import StateGraph, START, END, Command, interrupt, InMemory
 | `stream_mode="values"` / `stream_mode="updates"` | 已支持 |
 | `config={"recursion_limit": 25}` | 已支持 |
 | `ToolNode` / `tools_condition` | 已支持 plain dict message |
+| Node ESM `Annotation` / `StateGraph` | 已支持小型 JS/TS 子集 |
 
 尚未支持的高级功能，例如并行路由和 message streaming，会抛出清晰的
 `NotImplementedError` 或项目专用校验错误。
@@ -332,5 +390,7 @@ from nano_agentgraph import StateGraph, START, END, Command, interrupt, InMemory
 ```bash
 pytest -q
 ruff check .
+npm test
+npm run test:types
 for file in examples/*.py; do python "$file"; done
 ```

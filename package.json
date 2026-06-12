@@ -1,0 +1,37 @@
+{
+  "name": "nano-agentgraph",
+  "version": "0.1.0",
+  "description": "A tiny, readable LangGraph-style runtime for personal learning and agent orchestration experiments.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./js/index.d.ts",
+      "import": "./js/index.js"
+    }
+  },
+  "types": "./js/index.d.ts",
+  "files": [
+    "js/index.js",
+    "js/index.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test js/test/*.test.js",
+    "test:types": "tsc --target ES2022 --module NodeNext --moduleResolution NodeNext --strict --noEmit js/test/types.test.mts"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "keywords": [
+    "agent",
+    "graph",
+    "langgraph",
+    "orchestration",
+    "runtime"
+  ],
+  "license": "MIT"
+}
